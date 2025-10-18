@@ -25,7 +25,7 @@ from utils.utils import (download_weights, seed_everything, show_config,
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal
-ration=2.4
+ration=2.0
 
 
 UnFreeze_Epoch = 100  # 增加训练周期
@@ -788,8 +788,8 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\2000核桃仁图像'  # 源域数据集路径
-    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
+    source_VOCdevkit_path = '/kaggle/input/2000-wk-img'  # 源域数据集路径
+    target_VOCdevkit_path = '/kaggle/input/chestnet-dann'  # 目标域数据集路径
 
     # ---------------------------------#
     #   训练参数
