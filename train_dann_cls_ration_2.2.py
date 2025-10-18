@@ -27,6 +27,8 @@ import matplotlib.pyplot as plt
 import scipy.signal
 ration=2.2
 
+UnFreeze_Epoch = 100  # 增加训练周期
+
 # 新增：梯度反转层（GRL）实现
 class GradientReversalLayer(torch.autograd.Function):
     """梯度反转层，在前向传播中不变，反向传播中反转梯度"""
@@ -794,7 +796,7 @@ if __name__ == "__main__":
     Init_Epoch = 0
     Freeze_Epoch = 50
     Freeze_batch_size = 8
-    UnFreeze_Epoch = 300  # 增加训练周期
+    # UnFreeze_Epoch = 300  # 增加训练周期
     Unfreeze_batch_size = 8
     Freeze_Train = False
     Init_lr = 5e-4
