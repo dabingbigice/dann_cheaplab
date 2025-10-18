@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 import scipy.signal
 
 UnFreeze_Epoch = 100  # 增加训练周期
-ration = 1.5
+ration = 2
 
 
 # 新增：梯度反转层（GRL）实现
