@@ -1118,7 +1118,8 @@ if __name__ == "__main__":
         visual_tool = VisualizationTool(num_classes, input_shape)
 
         # 创建训练集可视化目录
-        train_visual_dir = os.path.join(save_dir, "train_visual")
+        train_visual_dir = os.path.join(save_dir, f"train_visual_{ration}")
+
         os.makedirs(train_visual_dir, exist_ok=True)
 
         # ---------------------------------------#

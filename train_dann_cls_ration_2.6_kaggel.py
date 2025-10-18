@@ -25,7 +25,7 @@ from utils.utils import (download_weights, seed_everything, show_config,
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal
-ration=2.2
+ration=2.6
 
 
 UnFreeze_Epoch = 100  # 增加训练周期
