@@ -788,8 +788,9 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\2000核桃仁图像'  # 源域数据集路径
-    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
+    # 数据集路径配置
+    source_VOCdevkit_path = '/kaggle/input/2000-wk-img'  # 源域数据集路径
+    target_VOCdevkit_path = '/kaggle/input/chestnet-dann'  # 目标域数据集路径
 
     # ---------------------------------#
     #   训练参数
