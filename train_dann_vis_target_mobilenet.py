@@ -785,7 +785,7 @@ if __name__ == "__main__":
     sync_bn = False
     fp16 = False
     num_classes = 2
-    backbone = "ghostnet"
+    backbone = "mobilenet"
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16

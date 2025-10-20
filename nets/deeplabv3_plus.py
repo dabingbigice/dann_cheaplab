@@ -509,29 +509,29 @@ class GhostNet(nn.Module):
         super().__init__()
         # 特征提取主干网络
         self.features = nn.Sequential(
-            nn.Sequential(
-                nn.Conv2d(3, 256, 3, 2, 1, bias=False),
-                nn.BatchNorm2d(256),
-                nn.ReLU(inplace=True)
-            ),
-            GhostModule(256, 512, stride=2),  # 输出尺寸减半
-            GhostModule(512, 1024),
-            GhostModule(1024, 2048, stride=2),  # 低级特征截止点
-            GhostModule(2048, 1024),
-            GhostModule(1024, 512, stride=2),
-            GhostModule(512, 320)  # 高级特征输出
-
             # nn.Sequential(
-            #     nn.Conv2d(3, 16, 3, 2, 1, bias=False),
-            #     nn.BatchNorm2d(16),
+            #     nn.Conv2d(3, 256, 3, 2, 1, bias=False),
+            #     nn.BatchNorm2d(256),
             #     nn.ReLU(inplace=True)
             # ),
-            # GhostModule(16, 24, stride=2),  # 输出尺寸减半
-            # GhostModule(24, 32),
-            # GhostModule(32, 64, stride=2),  # 低级特征截止点
-            # GhostModule(64, 96),
-            # GhostModule(96, 160, stride=2),
-            # GhostModule(160, 320)  # 高级特征输出
+            # GhostModule(256, 512, stride=2),  # 输出尺寸减半
+            # GhostModule(512, 1024),
+            # GhostModule(1024, 2048, stride=2),  # 低级特征截止点
+            # GhostModule(2048, 1024),
+            # GhostModule(1024, 512, stride=2),
+            # GhostModule(512, 320)  # 高级特征输出
+
+            nn.Sequential(
+                nn.Conv2d(3, 16, 3, 2, 1, bias=False),
+                nn.BatchNorm2d(16),
+                nn.ReLU(inplace=True)
+            ),
+            GhostModule(16, 24, stride=2),  # 输出尺寸减半
+            GhostModule(24, 32),
+            GhostModule(32, 64, stride=2),  # 低级特征截止点
+            GhostModule(64, 96),
+            GhostModule(96, 160, stride=2),
+            GhostModule(160, 320)  # 高级特征输出
         )
 
         # 通道调整层（修正适配）
@@ -540,17 +540,17 @@ class GhostNet(nn.Module):
             nn.BatchNorm2d(96),
             nn.ReLU(inplace=True)
         )
-        # self.adjust_low = nn.Sequential(
-        #     nn.Conv2d(32, 12, 1, bias=False),  # 低级特征压缩
-        #     nn.BatchNorm2d(12),
-        #     nn.ReLU(inplace=True)
-        # )
-
         self.adjust_low = nn.Sequential(
-            nn.Conv2d(1024, 12, 1, bias=False),  # 低级特征压缩
+            nn.Conv2d(32, 12, 1, bias=False),  # 低级特征压缩
             nn.BatchNorm2d(12),
             nn.ReLU(inplace=True)
         )
+        #
+        # self.adjust_low = nn.Sequential(
+        #     nn.Conv2d(1024, 12, 1, bias=False),  # 低级特征压缩
+        #     nn.BatchNorm2d(12),
+        #     nn.ReLU(inplace=True)
+        # )
 
         # 初始化权重
         self._initialize_weights()
