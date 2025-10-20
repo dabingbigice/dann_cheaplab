@@ -21,13 +21,16 @@ from utils.dataloader import DeeplabDataset, deeplab_dataset_collate
 from utils.utils import (download_weights, seed_everything, show_config,
                          worker_init_fn)
 
+
+
+# 可视化目标域分割结果
+
 # 设置matplotlib后端
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal
 
-UnFreeze_Epoch = 100  # 增加训练周期
-ration = 1
+ration = 3
 
 
 # 新增：梯度反转层（GRL）实现
@@ -503,7 +506,7 @@ def compute_class_weights(class_ratios, method='median_frequency'):
 
     elif method == 'custom':
         # 方法4：自定义权重
-        cls_weights = np.array([1, 2, 3], np.float32)
+        cls_weights = np.array([1, 80, 3], np.float32)
 
     else:
         raise ValueError(f"Unknown method: {method}")
@@ -511,7 +514,9 @@ def compute_class_weights(class_ratios, method='median_frequency'):
     print("\nComputed Class Weights:")
     for c in range(len(cls_weights)):
         print(f"Class {c}: {cls_weights[c]:.4f}")
-    cls_weights[1] *= ration
+    # cls_weights[2] = 1.1
+    # cls_weights[1] = 200
+
     return cls_weights
 
 
@@ -615,7 +620,7 @@ class VisualizationTool:
 
         # 设置颜色映射
         if num_classes == 3:
-            self.colors = [(0, 0, 255), (255, 0, 0), (0, 255, 0)]  # 背景、类别1、类别2
+            self.colors = [(0, 0, 0), (255, 0, 0), (0, 255, 0)]  # 背景、类别1、类别2
         else:
             # 生成随机颜色
             hsv_tuples = [(x / num_classes, 1., 1.) for x in range(num_classes)]
@@ -700,12 +705,13 @@ class VisualizationTool:
 
         return new_image, (pad_w, pad_h, scale, (nw, nh))
 
-    def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5):
+    def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
         可视化结果并保存
+        domain: 'source'或'target'，指定是源领域还是目标领域
         """
         os.makedirs(save_dir, exist_ok=True)
-        print(f"Saving visualization results to {save_dir}")
+        print(f"Saving visualization results for {domain} domain to {save_dir}")
 
         # 随机选择num_visual个样本进行可视化
         indices = np.random.choice(len(lines), min(num_visual, len(lines)), replace=False)
@@ -719,44 +725,48 @@ class VisualizationTool:
             image = Image.open(image_path)
             image = image.convert('RGB')
 
-            # 加载标签
-            label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
-            label = Image.open(label_path)
-
             # 预测分割结果
             seg_img = self.detect_image(model, image)
 
-            # 保存原始图像
-            # image.save(os.path.join(save_dir, f"{name}_original.jpg"))
+            # 创建对比图像（原始图像、预测结果）
+            if domain == 'source':
+                # 源领域：显示原始图像、真实标签和预测结果
+                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-            # 保存真实标签
-            # label.save(os.path.join(save_dir, f"{name}_label.png"))
+                # 原始图像
+                axes[0].imshow(np.array(image))
+                axes[0].set_title('Original Image')
+                axes[0].axis('off')
 
-            # 保存预测结果
-            # seg_img.save(os.path.join(save_dir, f"{name}_prediction.png"))
+                # 真实标签
+                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
+                label = Image.open(label_path)
+                label_array = np.array(label)
+                label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
+                for c in range(self.num_classes):
+                    mask = (label_array == c)
+                    label_vis[mask] = self.colors[c]
+                axes[1].imshow(label_vis)
+                axes[1].set_title('Ground Truth')
+                axes[1].axis('off')
 
-            # 创建对比图像（原始图像、真实标签、预测结果）
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                # 预测结果
+                axes[2].imshow(np.array(seg_img))
+                axes[2].set_title('Prediction')
+                axes[2].axis('off')
+            else:
+                # 目标领域：只显示原始图像和预测结果
+                fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-            # 原始图像
-            axes[0].imshow(np.array(image))
-            axes[0].set_title('Original Image')
-            axes[0].axis('off')
+                # 原始图像
+                axes[0].imshow(np.array(image))
+                axes[0].set_title('Original Image')
+                axes[0].axis('off')
 
-            # 真实标签
-            label_array = np.array(label)
-            label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
-            for c in range(self.num_classes):
-                mask = (label_array == c)
-                label_vis[mask] = self.colors[c]
-            axes[1].imshow(label_vis)
-            axes[1].set_title('Ground Truth')
-            axes[1].axis('off')
-
-            # 预测结果
-            axes[2].imshow(np.array(seg_img))
-            axes[2].set_title('Prediction')
-            axes[2].axis('off')
+                # 预测结果
+                axes[1].imshow(np.array(seg_img))
+                axes[1].set_title('Prediction')
+                axes[1].axis('off')
 
             # 保存对比图像
             plt.tight_layout()
@@ -774,8 +784,8 @@ if __name__ == "__main__":
     distributed = False
     sync_bn = False
     fp16 = False
-    num_classes = 3
-    backbone = "ghostnet"
+    num_classes = 2
+    backbone = "resnet18"
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
@@ -788,8 +798,8 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = '/kaggle/input/2000-wk-img'  # 源域数据集路径
-    target_VOCdevkit_path = '/kaggle/input/chestnet-dann'  # 目标域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
+    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
 
     # ---------------------------------#
     #   训练参数
@@ -797,7 +807,7 @@ if __name__ == "__main__":
     Init_Epoch = 0
     Freeze_Epoch = 50
     Freeze_batch_size = 8
-    # UnFreeze_Epoch = 300  # 增加训练周期
+    UnFreeze_Epoch = 300  # 增加训练周期
     Unfreeze_batch_size = 8
     Freeze_Train = False
     Init_lr = 5e-4
@@ -810,8 +820,8 @@ if __name__ == "__main__":
     save_dir = 'logs'
     eval_flag = True
     eval_period = 5
-    dice_loss = True
-    focal_loss = True  # 启用focal_loss
+    dice_loss = False
+    focal_loss = False  # 启用focal_loss
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], np.float32)
 
@@ -966,7 +976,7 @@ if __name__ == "__main__":
 
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='inverse')
+        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
 
         print("\nFinal Class Weights:")
         for c in range(num_classes):
@@ -1118,8 +1128,7 @@ if __name__ == "__main__":
         visual_tool = VisualizationTool(num_classes, input_shape)
 
         # 创建训练集可视化目录
-        train_visual_dir = os.path.join(save_dir, f"train_visual_{ration}")
-
+        train_visual_dir = os.path.join(save_dir, "train_visual")
         os.makedirs(train_visual_dir, exist_ok=True)
 
         # ---------------------------------------#
@@ -1204,13 +1213,30 @@ if __name__ == "__main__":
                 epoch_train_visual_dir = os.path.join(train_visual_dir, f"epoch_{epoch + 1}")
                 os.makedirs(epoch_train_visual_dir, exist_ok=True)
 
-                # 可视化训练集结果
+                # 创建源领域和目标领域的子目录
+                source_visual_dir = os.path.join(epoch_train_visual_dir, "source")
+                target_visual_dir = os.path.join(epoch_train_visual_dir, "target")
+                os.makedirs(source_visual_dir, exist_ok=True)
+                os.makedirs(target_visual_dir, exist_ok=True)
+
+                # 可视化源领域结果
                 visual_tool.visualize_results(
                     model_train,
                     source_train_lines,
                     source_VOCdevkit_path,
-                    epoch_train_visual_dir,
-                    20  # 每个epoch可视化10个训练样本
+                    source_visual_dir,
+                    20,  # 每个epoch可视化30个训练样本
+                    domain='source'
+                )
+
+                # 可视化目标领域结果
+                visual_tool.visualize_results(
+                    model_train,
+                    target_train_lines,
+                    target_VOCdevkit_path,
+                    target_visual_dir,
+                    30,  # 每个epoch可视化30个训练样本
+                    domain='target'
                 )
 
             if distributed:
