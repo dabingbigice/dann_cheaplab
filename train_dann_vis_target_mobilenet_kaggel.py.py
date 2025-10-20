@@ -785,11 +785,11 @@ if __name__ == "__main__":
     sync_bn = False
     fp16 = False
     num_classes = 2
-    backbone = "resnet"
+    backbone = "mobilenet"
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [320, 320]
+    input_shape = [512, 512]
 
     # ---------------------------------#
     #   DANN特定参数
