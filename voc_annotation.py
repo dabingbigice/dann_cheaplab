@@ -12,12 +12,12 @@ from tqdm import tqdm
 #   当前该库将测试集当作验证集使用，不单独划分测试集
 #-------------------------------------------------------#
 trainval_percent    = 1
-train_percent       = 0.9
+train_percent       = 0.8
 #-------------------------------------------------------#
 #   指向VOC数据集所在的文件夹
 #   默认指向根目录下的VOC数据集
 #-------------------------------------------------------#
-VOCdevkit_path      = 'F:\BaiduNetdiskDownload\\2000核桃仁图像'
+VOCdevkit_path      = 'F:\BaiduNetdiskDownload\\1-2仁'
 
 if __name__ == "__main__":
     random.seed(0)
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     print("Check datasets format, this may take a while.")
     print("检查数据集格式是否符合要求，这可能需要一段时间。")
-    classes_nums        = np.zeros([256], np.int)
+    classes_nums        = np.zeros([256], np.int32)
     for i in tqdm(list):
         name            = total_seg[i]
         png_file_name   = os.path.join(segfilepath, name)

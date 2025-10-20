@@ -21,11 +21,17 @@ from utils.dataloader import DeeplabDataset, deeplab_dataset_collate
 from utils.utils import (download_weights, seed_everything, show_config,
                          worker_init_fn)
 
+
+
+# 可视化目标域分割结果
+
 # 设置matplotlib后端
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal
-ration=3
+
+ration = 3
+
 
 # 新增：梯度反转层（GRL）实现
 class GradientReversalLayer(torch.autograd.Function):
@@ -508,8 +514,8 @@ def compute_class_weights(class_ratios, method='median_frequency'):
     print("\nComputed Class Weights:")
     for c in range(len(cls_weights)):
         print(f"Class {c}: {cls_weights[c]:.4f}")
-    # cls_weights[2] = 1
-    # cls_weights[1] = 55
+    # cls_weights[2] = 1.1
+    # cls_weights[1] = 200
 
     return cls_weights
 
@@ -699,12 +705,13 @@ class VisualizationTool:
 
         return new_image, (pad_w, pad_h, scale, (nw, nh))
 
-    def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5):
+    def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
         可视化结果并保存
+        domain: 'source'或'target'，指定是源领域还是目标领域
         """
         os.makedirs(save_dir, exist_ok=True)
-        print(f"Saving visualization results to {save_dir}")
+        print(f"Saving visualization results for {domain} domain to {save_dir}")
 
         # 随机选择num_visual个样本进行可视化
         indices = np.random.choice(len(lines), min(num_visual, len(lines)), replace=False)
@@ -718,44 +725,48 @@ class VisualizationTool:
             image = Image.open(image_path)
             image = image.convert('RGB')
 
-            # 加载标签
-            label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
-            label = Image.open(label_path)
-
             # 预测分割结果
             seg_img = self.detect_image(model, image)
 
-            # 保存原始图像
-            # image.save(os.path.join(save_dir, f"{name}_original.jpg"))
+            # 创建对比图像（原始图像、预测结果）
+            if domain == 'source':
+                # 源领域：显示原始图像、真实标签和预测结果
+                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-            # 保存真实标签
-            # label.save(os.path.join(save_dir, f"{name}_label.png"))
+                # 原始图像
+                axes[0].imshow(np.array(image))
+                axes[0].set_title('Original Image')
+                axes[0].axis('off')
 
-            # 保存预测结果
-            # seg_img.save(os.path.join(save_dir, f"{name}_prediction.png"))
+                # 真实标签
+                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
+                label = Image.open(label_path)
+                label_array = np.array(label)
+                label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
+                for c in range(self.num_classes):
+                    mask = (label_array == c)
+                    label_vis[mask] = self.colors[c]
+                axes[1].imshow(label_vis)
+                axes[1].set_title('Ground Truth')
+                axes[1].axis('off')
 
-            # 创建对比图像（原始图像、真实标签、预测结果）
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                # 预测结果
+                axes[2].imshow(np.array(seg_img))
+                axes[2].set_title('Prediction')
+                axes[2].axis('off')
+            else:
+                # 目标领域：只显示原始图像和预测结果
+                fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-            # 原始图像
-            axes[0].imshow(np.array(image))
-            axes[0].set_title('Original Image')
-            axes[0].axis('off')
+                # 原始图像
+                axes[0].imshow(np.array(image))
+                axes[0].set_title('Original Image')
+                axes[0].axis('off')
 
-            # 真实标签
-            label_array = np.array(label)
-            label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
-            for c in range(self.num_classes):
-                mask = (label_array == c)
-                label_vis[mask] = self.colors[c]
-            axes[1].imshow(label_vis)
-            axes[1].set_title('Ground Truth')
-            axes[1].axis('off')
-
-            # 预测结果
-            axes[2].imshow(np.array(seg_img))
-            axes[2].set_title('Prediction')
-            axes[2].axis('off')
+                # 预测结果
+                axes[1].imshow(np.array(seg_img))
+                axes[1].set_title('Prediction')
+                axes[1].axis('off')
 
             # 保存对比图像
             plt.tight_layout()
@@ -1202,13 +1213,30 @@ if __name__ == "__main__":
                 epoch_train_visual_dir = os.path.join(train_visual_dir, f"epoch_{epoch + 1}")
                 os.makedirs(epoch_train_visual_dir, exist_ok=True)
 
-                # 可视化训练集结果
+                # 创建源领域和目标领域的子目录
+                source_visual_dir = os.path.join(epoch_train_visual_dir, "source")
+                target_visual_dir = os.path.join(epoch_train_visual_dir, "target")
+                os.makedirs(source_visual_dir, exist_ok=True)
+                os.makedirs(target_visual_dir, exist_ok=True)
+
+                # 可视化源领域结果
                 visual_tool.visualize_results(
                     model_train,
                     source_train_lines,
                     source_VOCdevkit_path,
-                    epoch_train_visual_dir,
-                    30  # 每个epoch可视化10个训练样本
+                    source_visual_dir,
+                    20,  # 每个epoch可视化30个训练样本
+                    domain='source'
+                )
+
+                # 可视化目标领域结果
+                visual_tool.visualize_results(
+                    model_train,
+                    target_train_lines,
+                    target_VOCdevkit_path,
+                    target_visual_dir,
+                    30,  # 每个epoch可视化30个训练样本
+                    domain='target'
                 )
 
             if distributed:

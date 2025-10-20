@@ -375,9 +375,10 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
 
 
 # 辅助函数：计算分割损失（改进版，支持dice_loss和focal_loss）
+# 修改compute_segmentation_loss函数，实现Dice+CE组合损失
 def compute_segmentation_loss(outputs, targets, weights, num_classes, dice_loss, focal_loss):
     """
-    计算分割损失，支持dice_loss和focal_loss
+    计算分割损失，使用Dice+CE组合
     """
     # 确保权重在正确的设备上
     weight_tensor = torch.from_numpy(weights).float()
@@ -388,17 +389,18 @@ def compute_segmentation_loss(outputs, targets, weights, num_classes, dice_loss,
     ce_loss_fn = torch.nn.CrossEntropyLoss(weight=weight_tensor)
     ce_loss = ce_loss_fn(outputs, targets)
 
-    total_loss = ce_loss
-
-    # 添加Dice损失（对类别不平衡更鲁棒）
+    # 计算Dice损失（多类别）
+    dice_loss_value = 0
     if dice_loss:
-        dice_loss_value = 0
         smooth = 1e-5
         outputs_soft = torch.softmax(outputs, dim=1)
 
+        # 将目标转换为one-hot编码
+        targets_one_hot = torch.nn.functional.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+
         for c in range(num_classes):
             output_c = outputs_soft[:, c]
-            target_c = (targets == c).float()
+            target_c = targets_one_hot[:, c]
 
             intersection = (output_c * target_c).sum()
             union = output_c.sum() + target_c.sum()
@@ -406,34 +408,11 @@ def compute_segmentation_loss(outputs, targets, weights, num_classes, dice_loss,
             dice_loss_value += 1 - (2. * intersection + smooth) / (union + smooth)
 
         dice_loss_value /= num_classes
-        total_loss += dice_loss_value
 
-    # 添加Focal损失（关注难样本）
-    if focal_loss:
-        gamma = 2.0
-        alpha = 0.25
-
-        log_probs = torch.nn.functional.log_softmax(outputs, dim=1)
-        probs = torch.exp(log_probs)
-
-        # 只考虑目标类别的概率
-        targets_one_hot = torch.nn.functional.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2)
-        focal_weight = (1 - probs) ** gamma
-        focal_weight = focal_weight * targets_one_hot
-
-        # 应用类别权重
-        weight_tensor = weight_tensor.view(1, num_classes, 1, 1)
-        focal_weight = focal_weight * weight_tensor
-
-        # 计算Focal损失
-        focal_loss_value = -alpha * focal_weight * log_probs
-        focal_loss_value = focal_loss_value.sum() / (targets.numel() + 1e-8)
-
-        total_loss += focal_loss_value
+    # 总损失 = CE损失 + Dice损失
+    total_loss = ce_loss + dice_loss_value
 
     return total_loss
-
-
 # 辅助函数：获取当前学习率
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -508,9 +487,7 @@ def compute_class_weights(class_ratios, method='median_frequency'):
     print("\nComputed Class Weights:")
     for c in range(len(cls_weights)):
         print(f"Class {c}: {cls_weights[c]:.4f}")
-    # cls_weights[2] = 1
-    # cls_weights[1] = 55
-
+    # cls_weights[2] -= (cls_weights[2]-cls_weights[1]) * ration
     return cls_weights
 
 
@@ -614,7 +591,7 @@ class VisualizationTool:
 
         # 设置颜色映射
         if num_classes == 3:
-            self.colors = [(0, 0, 0), (255, 0, 0), (0, 255, 0)]  # 背景、类别1、类别2
+            self.colors = [(0, 0, 255), (255, 0, 0), (0, 255, 0)]  # 背景、类别1、类别2
         else:
             # 生成随机颜色
             hsv_tuples = [(x / num_classes, 1., 1.) for x in range(num_classes)]
@@ -773,7 +750,7 @@ if __name__ == "__main__":
     distributed = False
     sync_bn = False
     fp16 = False
-    num_classes = 2
+    num_classes = 3
     backbone = "ghostnet"
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
@@ -787,7 +764,7 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\2000核桃仁图像'  # 源域数据集路径
     target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
 
     # ---------------------------------#
@@ -809,7 +786,7 @@ if __name__ == "__main__":
     save_dir = 'logs'
     eval_flag = True
     eval_period = 5
-    dice_loss = False
+    dice_loss = True
     focal_loss = False  # 启用focal_loss
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], np.float32)
@@ -965,7 +942,7 @@ if __name__ == "__main__":
 
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
+        cls_weights = compute_class_weights(source_class_ratios, method='log')
 
         print("\nFinal Class Weights:")
         for c in range(num_classes):
