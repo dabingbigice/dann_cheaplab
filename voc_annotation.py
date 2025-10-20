@@ -17,7 +17,7 @@ train_percent       = 0.8
 #   指向VOC数据集所在的文件夹
 #   默认指向根目录下的VOC数据集
 #-------------------------------------------------------#
-VOCdevkit_path      = 'F:\BaiduNetdiskDownload\\1-2仁'
+VOCdevkit_path      = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'
 
 if __name__ == "__main__":
     random.seed(0)

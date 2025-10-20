@@ -787,7 +787,7 @@ if __name__ == "__main__":
     num_classes = 2
     backbone = "ghostnet"
     pretrained = False
-    model_path = "logs/ep105-loss0.714-val_loss0.007.pth"  # 完整的DeepLabV3+预训练模型
+    model_path = "logs/ep105.pth"  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
     input_shape = [320, 320]
 

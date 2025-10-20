@@ -785,7 +785,7 @@ if __name__ == "__main__":
     sync_bn = False
     fp16 = False
     num_classes = 2
-    backbone = "resnet18"
+    backbone = "resnet"
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
@@ -798,7 +798,7 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
     target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
 
     # ---------------------------------#
