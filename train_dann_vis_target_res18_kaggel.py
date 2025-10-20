@@ -806,9 +806,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 8
+    Freeze_batch_size = 32
     UnFreeze_Epoch = 300  # 增加训练周期
-    Unfreeze_batch_size = 8
+    Unfreeze_batch_size = 32
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
