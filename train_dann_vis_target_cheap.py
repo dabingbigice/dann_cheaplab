@@ -789,7 +789,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [512, 512]
+    input_shape = [468, 468]
 
     # ---------------------------------#
     #   DANN特定参数
@@ -972,15 +972,16 @@ if __name__ == "__main__":
     # 计算类别权重（只使用源域数据）
     if local_rank == 0:
         print("\nCalculating class weights for source domain...")
-        source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
-
+        # source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
+        #
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
-
-        print("\nFinal Class Weights:")
-        for c in range(num_classes):
-            print(f"Class {c}: {cls_weights[c]:.4f}")
+        # cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
+        #
+        # print("\nFinal Class Weights:")
+        # for c in range(num_classes):
+        #     print(f"Class {c}: {cls_weights[c]:.4f}")
+        cls_weights = np.ones([num_classes], np.float32)
     else:
         # 使用默认权重（将在后续广播）
         cls_weights = np.ones([num_classes], np.float32)
