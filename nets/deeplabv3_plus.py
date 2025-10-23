@@ -570,18 +570,56 @@ class GhostNet(nn.Module):
             # GhostModule(1024, 512, stride=2),
             # GhostModule(512, 320)  # 高级特征输出
 
+        #     self.features = nn.Sequential(
             nn.Sequential(
-                nn.Conv2d(3, 128, 3, 2, 1, bias=False),
-                nn.BatchNorm2d(128),
+                nn.Conv2d(3, 16, 3, 2, 1, bias=False),
+                nn.BatchNorm2d(16),
                 nn.ReLU(inplace=True)
             ),
-            GhostModule(128, 64, stride=2),  # 输出尺寸减半
-            GhostModule(64, 32),
+            GhostModule(16, 24, stride=2),  # 输出尺寸减半
+            GhostModule(24, 32),
             GhostModule(32, 64, stride=2),  # 低级特征截止点
-            GhostModule(64, 128),
-            GhostModule(128, 256, stride=2),
-            GhostModule(256, 320)  # 高级特征输出
+            nn.Sequential(
+                LRSA(64, qk_dim=32, mlp_dim=64, ps=32),
+            ),
+            GhostModule(64, 96),
+            GhostModule(96, 160, stride=2),
+            nn.Sequential(
+                LRSA(160, qk_dim=32, mlp_dim=64, ps=16),
+            ),
+            GhostModule(160, 320)  # 高级特征输出
         )
+        #    nn.Sequential(
+        #                 LRSA(64, qk_dim=32, mlp_dim=64, ps=48),
+        #             ),
+        #     self.features = nn.Sequential(
+        #     nn.Sequential(
+        #         nn.Conv2d(3, 32, 3, 2, 1, bias=False),
+        #         nn.BatchNorm2d(16),
+        #         nn.ReLU(inplace=True)
+        #     ),
+        #     GhostModule(32, 64, stride=2),  # 输出尺寸减半
+        #     GhostModule(64, 32),
+        #     GhostModule(32, 64, stride=2),  # 低级特征截止点
+        #     GhostModule(64, 160),
+        #     GhostModule(96, 128, stride=2),
+        #     GhostModule(128, 320),
+        #     GhostModule(320, 196),
+        #     GhostModule(196, 64),
+        #     GhostModule(64, 320),# 高级特征输出
+        # )
+        #     nn.Sequential(
+        #         nn.Conv2d(3, 16, 3, 2, 1, bias=False),
+        #         nn.BatchNorm2d(16),
+        #         nn.ReLU(inplace=True)
+        #     ),
+        #     GhostModule(16, 64, stride=2),  # 输出尺寸减半
+        #     GhostModule(64, 96),
+        #     GhostModule(96, 128, stride=2),  # 低级特征截止点
+        #     GhostModule(128, 192),
+        #     GhostModule(192, 256, stride=2),
+        #     GhostModule(256, 512)  # 高级特征输出
+        # )
 
         # 通道调整层（修正适配）
         self.adjust_x = nn.Sequential(
@@ -673,7 +711,7 @@ class DeepLab(nn.Module):
         #   利用不同膨胀率的膨胀卷积进行特征提取
         # -----------------------------------------#
         self.aspp_lrsa = nn.Sequential(
-            LRSA(in_channels, qk_dim=32, mlp_dim=64, ps=16),
+            LRSA(in_channels, qk_dim=32, mlp_dim=64, ps=48),
         )
 
         self.aspp = ASPP_group_point_conv_concat_before(dim_in=in_channels, dim_out=128, rate=16 // downsample_factor)
