@@ -214,17 +214,21 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
         with torch.cuda.amp.autocast(enabled=fp16):
             # 源域前向传播
             # 修改后：
+
+            print('源域前向传播...')
             result = model_train(imgs_source, alpha=alpha, mode='train')
             seg_output_source, domain_output_source = result
 
             # 目标域前向传播
+            print('目标域前向传播...')
             _, domain_output_target = model_train(imgs_target, alpha=alpha, mode='train')
 
+            print('计算分割损失（仅源域）...')
             # 计算分割损失（仅源域）
             seg_loss = compute_segmentation_loss(seg_output_source, pngs_source, weights=cls_weights,
                                                  num_classes=num_classes, dice_loss=dice_loss,
                                                  focal_loss=focal_loss)
-
+            print('计算域分类损失（源域+目标域）...')
             # 计算域分类损失（源域+目标域）
             domain_loss_source = torch.nn.functional.cross_entropy(domain_output_source, domain_labels_source)
             domain_loss_target = torch.nn.functional.cross_entropy(domain_output_target, domain_labels_target)
@@ -807,9 +811,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 8
+    Freeze_batch_size = 4
     UnFreeze_Epoch = 300  # 增加训练周期
-    Unfreeze_batch_size = 8
+    Unfreeze_batch_size = 4
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
