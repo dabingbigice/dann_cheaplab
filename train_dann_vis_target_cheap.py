@@ -109,8 +109,8 @@ class DeepLabDANN(torch.nn.Module):
 
         # 获取DeepLabV3+的特征
         low_level_features, x_backbone = self.deeplab.backbone(x)
-        x_lrsa = self.deeplab.aspp_lrsa(x_backbone)
-        x_aspp = self.deeplab.aspp(x_lrsa)
+        # x_lrsa = self.deeplab.aspp_lrsa(x_backbone)
+        x_aspp = self.deeplab.aspp(x_backbone)
 
         # 继续分割解码过程
         low_level_features = self.deeplab.shortcut_conv(low_level_features)
@@ -799,6 +799,7 @@ if __name__ == "__main__":
 
     # 数据集路径配置
     source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
+    # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
     target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
 
     # ---------------------------------#
