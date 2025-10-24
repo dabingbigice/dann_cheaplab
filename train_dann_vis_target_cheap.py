@@ -789,7 +789,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [768, 768]
+    input_shape = [640, 640]
 
     # ---------------------------------#
     #   DANN特定参数
@@ -807,9 +807,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 4
+    Freeze_batch_size = 8
     UnFreeze_Epoch = 300  # 增加训练周期
-    Unfreeze_batch_size = 4
+    Unfreeze_batch_size = 8
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
