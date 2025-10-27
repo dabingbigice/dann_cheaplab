@@ -436,7 +436,7 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=2, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -449,7 +449,7 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=2, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -462,7 +462,7 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1, bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=2, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -476,7 +476,7 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=2, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -488,8 +488,10 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             nn.Conv2d(dim_out * 5, dim_out, 1, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
+            LRSA(dim_out, qk_dim=32, mlp_dim=64, ps=16),
         )
-
+        self.act = nn.ReLU6(inplace=True)
+        self.adjust = nn.Conv2d(dim_in, dim_out, 1)
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -518,8 +520,9 @@ class ASPP_group_point_conv_concat_before(nn.Module):
             branch5_out,
         ], dim=1)
 
+        x1 = self.adjust(x)
 
-        return self.fusion(concat_feat)
+        return x1 + self.act(x1) * self.act(self.fusion(concat_feat))
 
 class GhostModule(nn.Module):
     def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1):
@@ -683,7 +686,7 @@ class ASPP_wt(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=1, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -696,7 +699,7 @@ class ASPP_wt(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=1, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -709,7 +712,7 @@ class ASPP_wt(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=1, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -723,7 +726,7 @@ class ASPP_wt(nn.Module):
             nn.BatchNorm2d(dim_in, momentum=bn_mom),
             nn.ReLU(inplace=True),
             # 确保输出通道为dim_out ↓↓↓
-            nn.Conv2d(dim_in, dim_out, 1,  bias=False),
+            nn.Conv2d(dim_in, dim_out, 1, groups=1, bias=False),
             nn.BatchNorm2d(dim_out, momentum=bn_mom),
             nn.ReLU(inplace=True),
         )
@@ -841,7 +844,7 @@ class DeepLab(nn.Module):
             # Depthwise卷积[1,6](@ref)
             nn.BatchNorm2d(152),
             nn.ReLU(inplace=True),
-            nn.Conv2d(152, 256, kernel_size=1, bias=False),  # Pointwise分组卷积[6,8](@ref)
+            nn.Conv2d(152, 256, kernel_size=1, groups=2, bias=False),  # Pointwise分组卷积[6,8](@ref)
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             # --------------------------------
@@ -852,7 +855,7 @@ class DeepLab(nn.Module):
             # 更高空洞率[9,11](@ref)
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=1, bias=False),  # 更大分组数[5,7](@ref)
+            nn.Conv2d(256, 128, kernel_size=1, groups=2, bias=False),  # 更大分组数[5,7](@ref)
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Dropout(0.1)

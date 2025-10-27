@@ -21,6 +21,8 @@ from utils.dataloader import DeeplabDataset, deeplab_dataset_collate
 from utils.utils import (download_weights, seed_everything, show_config,
                          worker_init_fn)
 
+
+
 # 可视化目标域分割结果
 
 # 设置matplotlib后端
@@ -212,36 +214,32 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
         with torch.cuda.amp.autocast(enabled=fp16):
             # 源域前向传播
             # 修改后：
-
-            # print('源域前向传播...')
             result = model_train(imgs_source, alpha=alpha, mode='train')
             seg_output_source, domain_output_source = result
 
             # 目标域前向传播
-            # print('目标域前向传播...')
             _, domain_output_target = model_train(imgs_target, alpha=alpha, mode='train')
 
-            # print('计算分割损失（仅源域）...')
             # 计算分割损失（仅源域）
             seg_loss = compute_segmentation_loss(seg_output_source, pngs_source, weights=cls_weights,
                                                  num_classes=num_classes, dice_loss=dice_loss,
                                                  focal_loss=focal_loss)
-            # print('计算域分类损失（源域+目标域）...')
+
             # 计算域分类损失（源域+目标域）
             domain_loss_source = torch.nn.functional.cross_entropy(domain_output_source, domain_labels_source)
             domain_loss_target = torch.nn.functional.cross_entropy(domain_output_target, domain_labels_target)
-
-            # print(f'domain_loss_source={domain_loss_source.size()},domain_loss_target_len={domain_loss_target.size()}')
             domain_loss = domain_loss_source + domain_loss_target
 
             # 总损失 = 分割损失 + λ * 域对抗损失
             loss = seg_loss + lambda_domain * domain_loss
+
             # 新增：计算域分类准确率
             domain_pred_source = torch.argmax(domain_output_source, dim=1)
             domain_acc_source = (domain_pred_source == domain_labels_source).float().mean()
 
             domain_pred_target = torch.argmax(domain_output_target, dim=1)
             domain_acc_target = (domain_pred_target == domain_labels_target).float().mean()
+
             domain_acc = (domain_acc_source + domain_acc_target) / 2
 
             # 新增：计算分割准确率
@@ -371,7 +369,7 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
 
         # 保存模型
         if (epoch + 1) % save_period == 0 or epoch + 1 == UnFreeze_Epoch:
-            torch.save(model.state_dict(), os.path.join(save_dir, 'pth/ep%03d-loss%.3f-val_loss%.3f.pth' %
+            torch.save(model.state_dict(), os.path.join(save_dir, 'ep%03d-loss%.3f-val_loss%.3f.pth' %
                                                         (
                                                             epoch + 1, total_loss / epoch_step,
                                                             val_loss / epoch_step_val)))
@@ -709,59 +707,41 @@ class VisualizationTool:
 
     def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
-        可视化结果并保存 - 批处理版本
+        可视化结果并保存
         domain: 'source'或'target'，指定是源领域还是目标领域
         """
         os.makedirs(save_dir, exist_ok=True)
-        print(f"批量保存 {domain} 领域的可视化结果到 {save_dir}，数量: {min(num_visual, len(lines))}")
+        print(f"Saving visualization results for {domain} domain to {save_dir}")
 
         # 随机选择num_visual个样本进行可视化
         indices = np.random.choice(len(lines), min(num_visual, len(lines)), replace=False)
 
-        # 批量处理：一次性读取所有图像
-        images = []
-        names = []
-        ground_truths = []  # 用于源领域的真实标签
-
-        print("批量读取图像数据...")
         for i in indices:
             line = lines[i]
             name = line.split()[0]
-            names.append(name)
 
             # 加载图像
             image_path = os.path.join(VOCdevkit_path, "VOC2007/JPEGImages", name + ".jpg")
             image = Image.open(image_path)
             image = image.convert('RGB')
-            images.append(image)
 
-            # 如果是源领域，加载真实标签
-            if domain == 'source':
-                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
-                label = Image.open(label_path)
-                ground_truths.append(label)
-
-        # 批量预测分割结果
-        print("批量进行分割预测...")
-        seg_imgs = []
-        for image in images:
+            # 预测分割结果
             seg_img = self.detect_image(model, image)
-            seg_imgs.append(seg_img)
 
-        # 批量创建和保存对比图像
-        print("批量生成可视化结果...")
-        for i, (name, image, seg_img) in enumerate(zip(names, images, seg_imgs)):
+            # 创建对比图像（原始图像、预测结果）
             if domain == 'source':
                 # 源领域：显示原始图像、真实标签和预测结果
                 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
                 # 原始图像
                 axes[0].imshow(np.array(image))
-                axes[0].set_title(f'Original Image: {name}')
+                axes[0].set_title('Original Image')
                 axes[0].axis('off')
 
                 # 真实标签
-                label_array = np.array(ground_truths[i])
+                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
+                label = Image.open(label_path)
+                label_array = np.array(label)
                 label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
                 for c in range(self.num_classes):
                     mask = (label_array == c)
@@ -780,7 +760,7 @@ class VisualizationTool:
 
                 # 原始图像
                 axes[0].imshow(np.array(image))
-                axes[0].set_title(f'Original Image: {name}')
+                axes[0].set_title('Original Image')
                 axes[0].axis('off')
 
                 # 预测结果
@@ -790,19 +770,8 @@ class VisualizationTool:
 
             # 保存对比图像
             plt.tight_layout()
-            plt.savefig(
-                os.path.join(save_dir, f"{name}_comparison.jpg"),
-                dpi=200,
-                bbox_inches='tight',
-                facecolor='white'  # 确保背景为白色[8](@ref)
-            )
-            plt.close()  # 关闭图形释放内存[6,7](@ref)
-
-            # 打印进度
-            if (i + 1) % 10 == 0 or (i + 1) == len(indices):
-                print(f"已处理 {i + 1}/{len(indices)} 张图像")
-
-        print(f"批量可视化完成！所有结果已保存到: {save_dir}")
+            plt.savefig(os.path.join(save_dir, f"{name}_comparison.jpg"), dpi=200, bbox_inches='tight')
+            plt.close()
 
 
 # 主函数
@@ -820,7 +789,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [640, 640]
+    input_shape = [768, 768]
 
     # ---------------------------------#
     #   DANN特定参数
@@ -838,9 +807,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 8
+    Freeze_batch_size = 4
     UnFreeze_Epoch = 300  # 增加训练周期
-    Unfreeze_batch_size = 8
+    Unfreeze_batch_size = 4
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
@@ -848,8 +817,8 @@ if __name__ == "__main__":
     momentum = 0.9
     weight_decay = 1e-4
     lr_decay_type = 'cos'
-    save_period = 1
-    save_dir = 'logs/cheaplab_dann_8_640_vistarget_600'
+    save_period = 5
+    save_dir = 'logs'
     eval_flag = True
     eval_period = 10
     dice_loss = False
@@ -1093,12 +1062,10 @@ if __name__ == "__main__":
         else:
             params_to_optimize = model_train.parameters()
 
-        # optimizer = {
-        #     'adam': optim.Adam(params_to_optimize, Init_lr_fit, betas=(momentum, 0.9), weight_decay=weight_decay),
-        # }[optimizer_type]
         optimizer = {
-            'adam': optim.AdamW(params_to_optimize, Init_lr_fit, betas=(momentum, 0.9), weight_decay=weight_decay),
+            'adam': optim.Adam(params_to_optimize, Init_lr_fit, betas=(momentum, 0.9), weight_decay=weight_decay),
         }[optimizer_type]
+
         # ---------------------------------------#
         #   获得学习率下降的公式
         # ---------------------------------------#
@@ -1270,7 +1237,7 @@ if __name__ == "__main__":
                     target_train_lines,
                     target_VOCdevkit_path,
                     target_visual_dir,
-                    600,  # 每个epoch可视化30个训练样本
+                    30,  # 每个epoch可视化30个训练样本
                     domain='target'
                 )
 
