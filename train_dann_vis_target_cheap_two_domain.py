@@ -91,19 +91,14 @@ class DeepLabDANN(torch.nn.Module):
 
         # 获取backbone的输出通道数
         if backbone == 'ghostnet':
-            backbone_output_channels = 160  # GhostNet最后一层的通道数
-        elif backbone == 'resnet50':
-            backbone_output_channels = 2048
-        elif backbone == 'xception':
-            backbone_output_channels = 2048
-        else:
-            backbone_output_channels = 256  # 默认值
+            backbone_output_channels = 96  # GhostNet最后一层的通道数
+
 
         # 第一个域分类器 - 在backbone后面
         self.domain_classifier_backbone = DomainClassifier(backbone_output_channels)
 
         # 第二个域分类器 - 在ASPP后面
-        aspp_output_channels = 256  # ASPP输出特征通道数
+        aspp_output_channels = 128  # ASPP输出特征通道数
         self.domain_classifier_aspp = DomainClassifier(aspp_output_channels)
 
         self.lambda_domain = lambda_domain  # 域对抗损失权重
@@ -859,6 +854,7 @@ class VisualizationTool:
                 print(f"已处理 {i + 1}/{len(indices)} 张图像")
 
         print(f"批量可视化完成！所有结果已保存到: {save_dir}")
+
 
 # 主函数
 if __name__ == "__main__":
