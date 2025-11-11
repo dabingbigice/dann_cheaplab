@@ -53,10 +53,8 @@ class DomainClassifier(torch.nn.Module):
         # 使用全局平均池化将特征图转换为特征向量
         self.global_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(input_channels, hidden_size),
+            torch.nn.Linear(input_channels, num_domains),
             torch.nn.ReLU(inplace=True),
-            torch.nn.Dropout(0.5),
-            torch.nn.Linear(hidden_size, num_domains),
         )
 
         # 初始化权重
@@ -83,7 +81,7 @@ class DomainClassifier(torch.nn.Module):
 import torch.nn.functional as F
 
 
-# 新增：DANN版本的DeepLabV3+模型
+# 修改：DANN版本的DeepLabV3+模型，添加多分类器
 class DeepLabDANN(torch.nn.Module):
     def __init__(self, num_classes, backbone, downsample_factor, pretrained, lambda_domain=0.5):
         super(DeepLabDANN, self).__init__()
@@ -91,10 +89,23 @@ class DeepLabDANN(torch.nn.Module):
         self.deeplab = DeepLab(num_classes=num_classes, backbone=backbone,
                                downsample_factor=downsample_factor, pretrained=pretrained)
 
-        # 域分类器 - 使用ASPP输出的通道数(256)，而不是backbone的输出通道数
-        domain_input_channels = 128  # ASPP输出特征通道数固定为256
+        # 获取backbone的输出通道数
+        if backbone == 'ghostnet':
+            backbone_output_channels = 160  # GhostNet最后一层的通道数
+        elif backbone == 'resnet50':
+            backbone_output_channels = 2048
+        elif backbone == 'xception':
+            backbone_output_channels = 2048
+        else:
+            backbone_output_channels = 256  # 默认值
 
-        self.domain_classifier = DomainClassifier(domain_input_channels)
+        # 第一个域分类器 - 在backbone后面
+        self.domain_classifier_backbone = DomainClassifier(backbone_output_channels)
+
+        # 第二个域分类器 - 在ASPP后面
+        aspp_output_channels = 256  # ASPP输出特征通道数
+        self.domain_classifier_aspp = DomainClassifier(aspp_output_channels)
+
         self.lambda_domain = lambda_domain  # 域对抗损失权重
         self.alpha = 0  # GRL参数，将在训练中动态调整
 
@@ -107,10 +118,9 @@ class DeepLabDANN(torch.nn.Module):
 
         # 获取DeepLabV3+的特征
         low_level_features, x_backbone = self.deeplab.backbone(x)
-        # x_lrsa = self.deeplab.aspp_lrsa(x_backbone)
-        x_aspp = self.deeplab.aspp(x_backbone)
 
         # 继续分割解码过程
+        x_aspp = self.deeplab.aspp(x_backbone)
         low_level_features = self.deeplab.shortcut_conv(low_level_features)
         x_aspp = F.interpolate(x_aspp, size=(low_level_features.size(2), low_level_features.size(3)),
                                mode='bilinear', align_corners=True)
@@ -118,13 +128,17 @@ class DeepLabDANN(torch.nn.Module):
         x = self.deeplab.cls_conv(cls_conv_before)
         x = F.interpolate(x, size=(H, W), mode='bilinear', align_corners=True)
 
-        # 如果是训练模式，计算域分类损失
+        # 如果是训练模式，计算两个域分类器的损失
         if mode == 'train':
+            # 应用梯度反转层到backbone特征
+            reversed_features_backbone = GradientReversalLayer.apply(x_backbone, alpha)
+            domain_output_backbone = self.domain_classifier_backbone(reversed_features_backbone)
+
             # 应用梯度反转层到ASPP特征
-            reversed_features = GradientReversalLayer.apply(x_aspp, alpha)
-            # reversed_features = GradientReversalLayer.apply(cls_conv_before, alpha)
-            domain_output = self.domain_classifier(reversed_features)
-            return x, domain_output
+            reversed_features_aspp = GradientReversalLayer.apply(x_aspp, alpha)
+            domain_output_aspp = self.domain_classifier_aspp(reversed_features_aspp)
+
+            return x, domain_output_backbone, domain_output_aspp
 
         else:
             # 验证/测试模式：直接返回分割结果
@@ -134,19 +148,23 @@ class DeepLabDANN(torch.nn.Module):
         self.alpha = alpha
 
 
-# 修改后的训练函数（DANN版本）
+# 修改后的训练函数（多分类器DANN版本）
 def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimizer, epoch,
                        epoch_step, epoch_step_val, gen_source, gen_target, gen_val, UnFreeze_Epoch, Cuda,
                        dice_loss, focal_loss, cls_weights, num_classes, fp16, scaler,
                        save_period, save_dir, local_rank, lambda_domain=0.5):
     total_loss = 0
     total_seg_loss = 0
+    total_domain_loss_backbone = 0
+    total_domain_loss_aspp = 0
     total_domain_loss = 0
     val_loss = 0
 
     # 新增：记录域分类准确率
-    total_domain_acc_source = 0
-    total_domain_acc_target = 0
+    total_domain_acc_backbone_source = 0
+    total_domain_acc_backbone_target = 0
+    total_domain_acc_aspp_source = 0
+    total_domain_acc_aspp_target = 0
     total_domain_acc = 0
 
     # 新增：记录分割准确率
@@ -212,38 +230,50 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
 
         with torch.cuda.amp.autocast(enabled=fp16):
             # 源域前向传播
-            # 修改后：
-
-            # print('源域前向传播...')
             result = model_train(imgs_source, alpha=alpha, mode='train')
-            seg_output_source, domain_output_source = result
+            seg_output_source, domain_output_backbone_source, domain_output_aspp_source = result
 
             # 目标域前向传播
-            # print('目标域前向传播...')
-            _, domain_output_target = model_train(imgs_target, alpha=alpha, mode='train')
+            _, domain_output_backbone_target, domain_output_aspp_target = model_train(imgs_target, alpha=alpha,
+                                                                                      mode='train')
 
-            # print('计算分割损失（仅源域）...')
             # 计算分割损失（仅源域）
             seg_loss = compute_segmentation_loss(seg_output_source, pngs_source, weights=cls_weights,
                                                  num_classes=num_classes, dice_loss=dice_loss,
                                                  focal_loss=focal_loss)
-            # print('计算域分类损失（源域+目标域）...')
-            # 计算域分类损失（源域+目标域）
-            domain_loss_source = torch.nn.functional.cross_entropy(domain_output_source, domain_labels_source)
-            domain_loss_target = torch.nn.functional.cross_entropy(domain_output_target, domain_labels_target)
 
-            # print(f'domain_loss_source={domain_loss_source.size()},domain_loss_target_len={domain_loss_target.size()}')
-            domain_loss = domain_loss_source + domain_loss_target
+            # 计算两个域分类器的损失（源域+目标域）
+            domain_loss_backbone_source = torch.nn.functional.cross_entropy(domain_output_backbone_source,
+                                                                            domain_labels_source)
+            domain_loss_backbone_target = torch.nn.functional.cross_entropy(domain_output_backbone_target,
+                                                                            domain_labels_target)
+            domain_loss_backbone = domain_loss_backbone_source + domain_loss_backbone_target
+
+            domain_loss_aspp_source = torch.nn.functional.cross_entropy(domain_output_aspp_source, domain_labels_source)
+            domain_loss_aspp_target = torch.nn.functional.cross_entropy(domain_output_aspp_target, domain_labels_target)
+            domain_loss_aspp = domain_loss_aspp_source + domain_loss_aspp_target
+
+            # 总域分类损失为两个分类器损失的加权平均
+            domain_loss = (domain_loss_backbone + domain_loss_aspp) / 2
 
             # 总损失 = 分割损失 + λ * 域对抗损失
             loss = seg_loss + lambda_domain * domain_loss
-            # 新增：计算域分类准确率
-            domain_pred_source = torch.argmax(domain_output_source, dim=1)
-            domain_acc_source = (domain_pred_source == domain_labels_source).float().mean()
 
-            domain_pred_target = torch.argmax(domain_output_target, dim=1)
-            domain_acc_target = (domain_pred_target == domain_labels_target).float().mean()
-            domain_acc = (domain_acc_source + domain_acc_target) / 2
+            # 新增：计算域分类准确率
+            domain_pred_backbone_source = torch.argmax(domain_output_backbone_source, dim=1)
+            domain_acc_backbone_source = (domain_pred_backbone_source == domain_labels_source).float().mean()
+
+            domain_pred_backbone_target = torch.argmax(domain_output_backbone_target, dim=1)
+            domain_acc_backbone_target = (domain_pred_backbone_target == domain_labels_target).float().mean()
+
+            domain_pred_aspp_source = torch.argmax(domain_output_aspp_source, dim=1)
+            domain_acc_aspp_source = (domain_pred_aspp_source == domain_labels_source).float().mean()
+
+            domain_pred_aspp_target = torch.argmax(domain_output_aspp_target, dim=1)
+            domain_acc_aspp_target = (domain_pred_aspp_target == domain_labels_target).float().mean()
+
+            domain_acc = (domain_acc_backbone_source + domain_acc_backbone_target +
+                          domain_acc_aspp_source + domain_acc_aspp_target) / 4
 
             # 新增：计算分割准确率
             seg_pred = torch.argmax(seg_output_source, dim=1)
@@ -282,18 +312,23 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
 
         total_loss += loss.item()
         total_seg_loss += seg_loss.item()
+        total_domain_loss_backbone += domain_loss_backbone.item()
+        total_domain_loss_aspp += domain_loss_aspp.item()
         total_domain_loss += domain_loss.item()
 
         # 新增：累加准确率
-        total_domain_acc_source += domain_acc_source.item()
-        total_domain_acc_target += domain_acc_target.item()
+        total_domain_acc_backbone_source += domain_acc_backbone_source.item()
+        total_domain_acc_backbone_target += domain_acc_backbone_target.item()
+        total_domain_acc_aspp_source += domain_acc_aspp_source.item()
+        total_domain_acc_aspp_target += domain_acc_aspp_target.item()
         total_domain_acc += domain_acc.item()
         total_seg_acc += seg_acc.item()
 
         if local_rank == 0:
             pbar.set_postfix(**{'total_loss': total_loss / (iteration + 1),
                                 'seg_loss': total_seg_loss / (iteration + 1),
-                                'domain_loss': total_domain_loss / (iteration + 1),
+                                'domain_loss_backbone': total_domain_loss_backbone / (iteration + 1),
+                                'domain_loss_aspp': total_domain_loss_aspp / (iteration + 1),
                                 'domain_acc': total_domain_acc / (iteration + 1),
                                 'seg_acc': total_seg_acc / (iteration + 1),
                                 'alpha': alpha,
@@ -350,15 +385,21 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
                                 total_seg_acc / epoch_step,
                                 val_seg_acc / epoch_step_val,
                                 total_domain_acc / epoch_step,
-                                total_domain_acc_source / epoch_step,
-                                total_domain_acc_target / epoch_step)
+                                total_domain_acc_backbone_source / epoch_step,
+                                total_domain_acc_backbone_target / epoch_step,
+                                total_domain_acc_aspp_source / epoch_step,
+                                total_domain_acc_aspp_target / epoch_step)
 
         print('Epoch:' + str(epoch + 1) + '/' + str(UnFreeze_Epoch))
         print('Total Loss: %.3f || Val Loss: %.3f ' % (total_loss / epoch_step, val_loss / epoch_step_val))
-        print('Domain Acc: %.3f%% (Source: %.3f%%, Target: %.3f%%)' %
+        print('Domain Acc: %.3f%% (Backbone Source: %.3f%%, Target: %.3f%%)' %
               (total_domain_acc / epoch_step * 100,
-               total_domain_acc_source / epoch_step * 100,
-               total_domain_acc_target / epoch_step * 100))
+               total_domain_acc_backbone_source / epoch_step * 100,
+               total_domain_acc_backbone_target / epoch_step * 100))
+        print('Domain Acc: %.3f%% (ASPP Source: %.3f%%, Target: %.3f%%)' %
+              (total_domain_acc / epoch_step * 100,
+               total_domain_acc_aspp_source / epoch_step * 100,
+               total_domain_acc_aspp_target / epoch_step * 100))
 
         # 打印每个类别的准确率和IoU
         print("\nClass-wise Performance:")
@@ -531,24 +572,32 @@ class EnhancedLossHistory(LossHistory):
             "train_seg_acc": [],
             "val_seg_acc": [],
             "domain_acc": [],
-            "domain_acc_source": [],
-            "domain_acc_target": []
+            "domain_acc_backbone_source": [],
+            "domain_acc_backbone_target": [],
+            "domain_acc_aspp_source": [],
+            "domain_acc_aspp_target": []
         }
 
-    def append_acc(self, epoch, train_seg_acc, val_seg_acc, domain_acc, domain_acc_source, domain_acc_target):
+    def append_acc(self, epoch, train_seg_acc, val_seg_acc, domain_acc,
+                   domain_acc_backbone_source, domain_acc_backbone_target,
+                   domain_acc_aspp_source, domain_acc_aspp_target):
         self.acc_details["train_seg_acc"].append(train_seg_acc)
         self.acc_details["val_seg_acc"].append(val_seg_acc)
         self.acc_details["domain_acc"].append(domain_acc)
-        self.acc_details["domain_acc_source"].append(domain_acc_source)
-        self.acc_details["domain_acc_target"].append(domain_acc_target)
+        self.acc_details["domain_acc_backbone_source"].append(domain_acc_backbone_source)
+        self.acc_details["domain_acc_backbone_target"].append(domain_acc_backbone_target)
+        self.acc_details["domain_acc_aspp_source"].append(domain_acc_aspp_source)
+        self.acc_details["domain_acc_aspp_target"].append(domain_acc_aspp_target)
 
         with open(os.path.join(self.log_dir, "acc_epoch.txt"), 'a') as f:
             f.write(str(epoch))
             f.write("," + str(train_seg_acc))
             f.write("," + str(val_seg_acc))
             f.write("," + str(domain_acc))
-            f.write("," + str(domain_acc_source))
-            f.write("," + str(domain_acc_target))
+            f.write("," + str(domain_acc_backbone_source))
+            f.write("," + str(domain_acc_backbone_target))
+            f.write("," + str(domain_acc_aspp_source))
+            f.write("," + str(domain_acc_aspp_target))
             f.write("\n")
 
         self.acc_plot()
@@ -585,8 +634,13 @@ class EnhancedLossHistory(LossHistory):
 
         plt.figure()
         plt.plot(iters, self.acc_details["domain_acc"], 'blue', linewidth=2, label='domain acc')
-        plt.plot(iters, self.acc_details["domain_acc_source"], 'green', linewidth=2, label='domain acc source')
-        plt.plot(iters, self.acc_details["domain_acc_target"], 'red', linewidth=2, label='domain acc target')
+        plt.plot(iters, self.acc_details["domain_acc_backbone_source"], 'green', linewidth=2,
+                 label='domain acc backbone source')
+        plt.plot(iters, self.acc_details["domain_acc_backbone_target"], 'red', linewidth=2,
+                 label='domain acc backbone target')
+        plt.plot(iters, self.acc_details["domain_acc_aspp_source"], 'cyan', linewidth=2, label='domain acc aspp source')
+        plt.plot(iters, self.acc_details["domain_acc_aspp_target"], 'magenta', linewidth=2,
+                 label='domain acc aspp target')
 
         try:
             if len(self.acc_details["domain_acc"]) < 25:
@@ -594,13 +648,14 @@ class EnhancedLossHistory(LossHistory):
             else:
                 num = 15
 
-            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc"], num, 3), 'cyan',
-                     linestyle='--',
-                     linewidth=2, label='smooth domain acc')
-            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc_source"], num, 3), '#FFA500',
-                     linestyle='--', linewidth=2, label='smooth domain acc source')
-            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc_target"], num, 3), '#800080',
-                     linestyle='--', linewidth=2, label='smooth domain acc target')
+            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc"], num, 3), 'darkblue',
+                     linestyle='--', linewidth=2, label='smooth domain acc')
+            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc_backbone_source"], num, 3),
+                     'lightgreen',
+                     linestyle='--', linewidth=2, label='smooth domain acc backbone source')
+            plt.plot(iters, scipy.signal.savgol_filter(self.acc_details["domain_acc_backbone_target"], num, 3),
+                     'lightcoral',
+                     linestyle='--', linewidth=2, label='smooth domain acc backbone target')
         except:
             pass
 
@@ -795,16 +850,15 @@ class VisualizationTool:
                 os.path.join(save_dir, f"{name}_comparison.jpg"),
                 dpi=200,
                 bbox_inches='tight',
-                facecolor='white'  # 确保背景为白色[8](@ref)
+                facecolor='white'  # 确保背景为白色
             )
-            plt.close()  # 关闭图形释放内存[6,7](@ref)
+            plt.close()  # 关闭图形释放内存
 
             # 打印进度
             if (i + 1) % 10 == 0 or (i + 1) == len(indices):
                 print(f"已处理 {i + 1}/{len(indices)} 张图像")
 
         print(f"批量可视化完成！所有结果已保存到: {save_dir}")
-
 
 # 主函数
 if __name__ == "__main__":
@@ -851,7 +905,7 @@ if __name__ == "__main__":
     weight_decay = 1e-4
     lr_decay_type = 'cos'
     save_period = 1
-    save_dir = 'logs/cheaplab_dann_8_640_vistarget_600'
+    save_dir = 'logs'
     eval_flag = True
     eval_period = 10
     dice_loss = False

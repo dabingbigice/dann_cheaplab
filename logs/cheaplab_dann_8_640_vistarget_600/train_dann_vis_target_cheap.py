@@ -114,14 +114,15 @@ class DeepLabDANN(torch.nn.Module):
         low_level_features = self.deeplab.shortcut_conv(low_level_features)
         x_aspp = F.interpolate(x_aspp, size=(low_level_features.size(2), low_level_features.size(3)),
                                mode='bilinear', align_corners=True)
-        x = self.deeplab.cat_conv(torch.cat((x_aspp, low_level_features), dim=1))
-        x = self.deeplab.cls_conv(x)
+        cls_conv_before = self.deeplab.cat_conv(torch.cat((x_aspp, low_level_features), dim=1))
+        x = self.deeplab.cls_conv(cls_conv_before)
         x = F.interpolate(x, size=(H, W), mode='bilinear', align_corners=True)
 
         # 如果是训练模式，计算域分类损失
         if mode == 'train':
             # 应用梯度反转层到ASPP特征
             reversed_features = GradientReversalLayer.apply(x_aspp, alpha)
+            # reversed_features = GradientReversalLayer.apply(cls_conv_before, alpha)
             domain_output = self.domain_classifier(reversed_features)
             return x, domain_output
 
@@ -371,7 +372,7 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
 
         # 保存模型
         if (epoch + 1) % save_period == 0 or epoch + 1 == UnFreeze_Epoch:
-            torch.save(model.state_dict(), os.path.join(save_dir, 'ep%03d-loss%.3f-val_loss%.3f.pth' %
+            torch.save(model.state_dict(), os.path.join(save_dir, 'pth/ep%03d-loss%.3f-val_loss%.3f.pth' %
                                                         (
                                                             epoch + 1, total_loss / epoch_step,
                                                             val_loss / epoch_step_val)))
@@ -709,41 +710,59 @@ class VisualizationTool:
 
     def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
-        可视化结果并保存
+        可视化结果并保存 - 批处理版本
         domain: 'source'或'target'，指定是源领域还是目标领域
         """
         os.makedirs(save_dir, exist_ok=True)
-        print(f"Saving visualization results for {domain} domain to {save_dir}")
+        print(f"批量保存 {domain} 领域的可视化结果到 {save_dir}，数量: {min(num_visual, len(lines))}")
 
         # 随机选择num_visual个样本进行可视化
         indices = np.random.choice(len(lines), min(num_visual, len(lines)), replace=False)
 
+        # 批量处理：一次性读取所有图像
+        images = []
+        names = []
+        ground_truths = []  # 用于源领域的真实标签
+
+        print("批量读取图像数据...")
         for i in indices:
             line = lines[i]
             name = line.split()[0]
+            names.append(name)
 
             # 加载图像
             image_path = os.path.join(VOCdevkit_path, "VOC2007/JPEGImages", name + ".jpg")
             image = Image.open(image_path)
             image = image.convert('RGB')
+            images.append(image)
 
-            # 预测分割结果
+            # 如果是源领域，加载真实标签
+            if domain == 'source':
+                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
+                label = Image.open(label_path)
+                ground_truths.append(label)
+
+        # 批量预测分割结果
+        print("批量进行分割预测...")
+        seg_imgs = []
+        for image in images:
             seg_img = self.detect_image(model, image)
+            seg_imgs.append(seg_img)
 
-            # 创建对比图像（原始图像、预测结果）
+        # 批量创建和保存对比图像
+        print("批量生成可视化结果...")
+        for i, (name, image, seg_img) in enumerate(zip(names, images, seg_imgs)):
             if domain == 'source':
                 # 源领域：显示原始图像、真实标签和预测结果
                 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
                 # 原始图像
                 axes[0].imshow(np.array(image))
-                axes[0].set_title('Original Image')
+                axes[0].set_title(f'Original Image: {name}')
                 axes[0].axis('off')
 
                 # 真实标签
-                label_path = os.path.join(VOCdevkit_path, "VOC2007/SegmentationClass", name + ".png")
-                label = Image.open(label_path)
-                label_array = np.array(label)
+                label_array = np.array(ground_truths[i])
                 label_vis = np.zeros((label_array.shape[0], label_array.shape[1], 3), dtype=np.uint8)
                 for c in range(self.num_classes):
                     mask = (label_array == c)
@@ -762,7 +781,7 @@ class VisualizationTool:
 
                 # 原始图像
                 axes[0].imshow(np.array(image))
-                axes[0].set_title('Original Image')
+                axes[0].set_title(f'Original Image: {name}')
                 axes[0].axis('off')
 
                 # 预测结果
@@ -772,8 +791,19 @@ class VisualizationTool:
 
             # 保存对比图像
             plt.tight_layout()
-            plt.savefig(os.path.join(save_dir, f"{name}_comparison.jpg"), dpi=200, bbox_inches='tight')
-            plt.close()
+            plt.savefig(
+                os.path.join(save_dir, f"{name}_comparison.jpg"),
+                dpi=200,
+                bbox_inches='tight',
+                facecolor='white'  # 确保背景为白色[8](@ref)
+            )
+            plt.close()  # 关闭图形释放内存[6,7](@ref)
+
+            # 打印进度
+            if (i + 1) % 10 == 0 or (i + 1) == len(indices):
+                print(f"已处理 {i + 1}/{len(indices)} 张图像")
+
+        print(f"批量可视化完成！所有结果已保存到: {save_dir}")
 
 
 # 主函数
@@ -789,7 +819,7 @@ if __name__ == "__main__":
     num_classes = 2
     backbone = "ghostnet"
     pretrained = False
-    model_path = ""  # 完整的DeepLabV3+预训练模型
+    model_path = "logs/cheaplab_dann_7_batchsize_4_640_no_star/ep010-loss0.708-val_loss0.011.pth"  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
     input_shape = [640, 640]
 
@@ -803,6 +833,7 @@ if __name__ == "__main__":
     source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
     # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
     target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
+    # target_VOCdevkit_path = 'F:\BaiduNetdiskDownload\板栗\\archive\chestnut_improve'  # 目标域数据集路径
 
     # ---------------------------------#
     #   训练参数
@@ -810,7 +841,7 @@ if __name__ == "__main__":
     Init_Epoch = 0
     Freeze_Epoch = 50
     Freeze_batch_size = 4
-    UnFreeze_Epoch = 300  # 增加训练周期
+    UnFreeze_Epoch = 500  # 增加训练周期
     Unfreeze_batch_size = 4
     Freeze_Train = False
     Init_lr = 5e-4
@@ -819,10 +850,10 @@ if __name__ == "__main__":
     momentum = 0.9
     weight_decay = 1e-4
     lr_decay_type = 'cos'
-    save_period = 5
-    save_dir = 'logs'
+    save_period = 1
+    save_dir = 'logs/cheaplab_dann_8_640_vistarget_600'
     eval_flag = True
-    eval_period = 5
+    eval_period = 10
     dice_loss = False
     focal_loss = False  # 启用focal_loss
     # cls_weights = np.ones([num_classes], np.float32)

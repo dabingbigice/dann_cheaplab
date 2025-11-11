@@ -64,7 +64,7 @@ def batch_rename_images(folder_path, start_index=1, prefix="", digits=3):
 # 使用方法
 if __name__ == "__main__":
     # 设置你的图片文件夹路径[1](@ref)
-    folder_path = r"F:\BaiduNetdiskDownload\板栗\archive\chestnut_zonguldak\VOC2007\JPEGImages"  # 请修改为你的实际路径
+    folder_path = r"F:\BaiduNetdiskDownload\板栗\archive\chestnut_improve\VOC2007\JPEGImages"  # 请修改为你的实际路径
 
     # 调用函数进行重命名
     batch_rename_images(folder_path, start_index=1, prefix="IMG_", digits=3)
