@@ -29,7 +29,8 @@ import matplotlib.pyplot as plt
 import scipy.signal
 
 ration = 3
-
+# 设置CUDA_LAUNCH_BLOCKING以便调试
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 # 新增：梯度反转层（GRL）实现
 class GradientReversalLayer(torch.autograd.Function):
@@ -944,7 +945,7 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'H:VOCdevkit_1-2仁'  # 源域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\2000_wk_img'  # 源域数据集路径
     # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
     target_VOCdevkit_path = 'H:\板栗\VOCdevkit'  # 目标域数据集路径
     # target_VOCdevkit_path = 'F:\BaiduNetdiskDownload\板栗\\archive\chestnut_improve'  # 目标域数据集路径
@@ -973,7 +974,7 @@ if __name__ == "__main__":
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], np.float32)
 
-    num_workers = 8
+    num_workers = 4
 
     # 设置随机种子
     seed_everything(seed)
