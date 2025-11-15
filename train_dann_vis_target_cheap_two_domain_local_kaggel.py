@@ -1386,7 +1386,7 @@ if __name__ == "__main__":
                     target_train_lines,
                     target_VOCdevkit_path,
                     target_visual_dir,
-                    500,  # 每个epoch可视化30个训练样本
+                    20,  # 每个epoch可视化30个训练样本
                     domain='target'
                 )
 
