@@ -53,10 +53,7 @@ class DomainClassifier(torch.nn.Module):
         # 使用全局平均池化将特征图转换为特征向量
         self.global_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(input_channels, hidden_size),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Dropout(0.5),
-            torch.nn.Linear(hidden_size, num_domains),
+            torch.nn.Linear(input_channels, num_domains),
         )
 
         # 初始化权重
@@ -100,7 +97,8 @@ class DeepLabDANN(torch.nn.Module):
 
         # 第二个域分类器 - 在ASPP后面
         aspp_output_channels = 128  # ASPP输出特征通道数
-        self.domain_classifier_aspp = DomainClassifier(aspp_output_channels)
+        low_level_channels = 12  # ASPP输出特征通道数
+        self.domain_classifier_aspp = DomainClassifier(low_level_channels)
 
         self.lambda_domain = lambda_domain  # 域对抗损失权重
         self.alpha = 0  # GRL参数，将在训练中动态调整
@@ -113,11 +111,11 @@ class DeepLabDANN(torch.nn.Module):
         H, W = x.size(2), x.size(3)
 
         # 获取DeepLabV3+的特征
-        low_level_features, x_backbone = self.deeplab.backbone(x)
+        low_level_features_backbone, x_backbone = self.deeplab.backbone(x)
 
         # 继续分割解码过程
         x_aspp = self.deeplab.aspp(x_backbone)
-        low_level_features = self.deeplab.shortcut_conv(low_level_features)
+        low_level_features = self.deeplab.shortcut_conv(low_level_features_backbone)
         x_aspp = F.interpolate(x_aspp, size=(low_level_features.size(2), low_level_features.size(3)),
                                mode='bilinear', align_corners=True)
         cls_conv_before = self.deeplab.cat_conv(torch.cat((x_aspp, low_level_features), dim=1))
@@ -126,13 +124,13 @@ class DeepLabDANN(torch.nn.Module):
 
         # 如果是训练模式，计算两个域分类器的损失
         if mode == 'train':
+
+            # 应用梯度反转层到ASPP特征
+            reversed_features_aspp = GradientReversalLayer.apply(low_level_features_backbone, alpha)
+            domain_output_aspp = self.domain_classifier_aspp(reversed_features_aspp)
             # 应用梯度反转层到backbone特征
             reversed_features_backbone = GradientReversalLayer.apply(x_backbone, alpha)
             domain_output_backbone = self.domain_classifier_backbone(reversed_features_backbone)
-
-            # 应用梯度反转层到ASPP特征
-            reversed_features_aspp = GradientReversalLayer.apply(x_aspp, alpha)
-            domain_output_aspp = self.domain_classifier_aspp(reversed_features_aspp)
 
             return x, domain_output_backbone, domain_output_aspp
 
@@ -825,7 +823,6 @@ class VisualizationTool:
             print(f"处理图像 {name} 时出错: {e}")
             return False, str(e)
 
-
     def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
         顺序处理版本（备用，用于调试）
@@ -947,9 +944,9 @@ if __name__ == "__main__":
     lambda_domain = 0.5  # 域对抗损失权重
 
     # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
+    source_VOCdevkit_path = 'H:VOCdevkit_1-2仁'  # 源域数据集路径
     # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
-    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
+    target_VOCdevkit_path = 'H:\板栗\VOCdevkit'  # 目标域数据集路径
     # target_VOCdevkit_path = 'F:\BaiduNetdiskDownload\板栗\\archive\chestnut_improve'  # 目标域数据集路径
 
     # ---------------------------------#
@@ -976,7 +973,7 @@ if __name__ == "__main__":
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], np.float32)
 
-    num_workers = 4
+    num_workers = 8
 
     # 设置随机种子
     seed_everything(seed)
@@ -1123,12 +1120,12 @@ if __name__ == "__main__":
     # 计算类别权重（只使用源域数据）
     if local_rank == 0:
         print("\nCalculating class weights for source domain...")
-        source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
+        # source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
         #
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
-        #
+        # cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
+        cls_weights = [1, 1]  #
         print("\nFinal Class Weights:")
         for c in range(num_classes):
             print(f"Class {c}: {cls_weights[c]:.4f}")
@@ -1389,7 +1386,7 @@ if __name__ == "__main__":
                     target_train_lines,
                     target_VOCdevkit_path,
                     target_visual_dir,
-                    600,  # 每个epoch可视化30个训练样本
+                    50,  # 每个epoch可视化30个训练样本
                     domain='target'
                 )
 
