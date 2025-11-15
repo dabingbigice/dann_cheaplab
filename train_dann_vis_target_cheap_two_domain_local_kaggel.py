@@ -954,9 +954,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 4
+    Freeze_batch_size = 8
     UnFreeze_Epoch = 500  # 增加训练周期
-    Unfreeze_batch_size = 4
+    Unfreeze_batch_size = 8
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
@@ -973,7 +973,7 @@ if __name__ == "__main__":
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], np.float32)
 
-    num_workers = 4
+    num_workers = 8
 
     # 设置随机种子
     seed_everything(seed)
