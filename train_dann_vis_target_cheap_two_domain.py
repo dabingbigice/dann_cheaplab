@@ -127,7 +127,8 @@ class DeepLabDANN(torch.nn.Module):
 
         # 第二个域分类器 - 在ASPP后面
         aspp_output_channels = 128  # ASPP输出特征通道数
-        self.domain_classifier_aspp = DomainClassifier(aspp_output_channels)
+        low_level_features_channels = 12  # ASPP输出特征通道数
+        self.domain_classifier_aspp = DomainClassifier(low_level_features_channels)
 
         self.lambda_domain = lambda_domain  # 域对抗损失权重
         self.alpha = 0  # GRL参数，将在训练中动态调整
@@ -140,11 +141,11 @@ class DeepLabDANN(torch.nn.Module):
         H, W = x.size(2), x.size(3)
 
         # 获取DeepLabV3+的特征
-        low_level_features, x_backbone = self.deeplab.backbone(x)
+        low_level_features_backbone, x_backbone = self.deeplab.backbone(x)
 
         # 继续分割解码过程
         x_aspp = self.deeplab.aspp(x_backbone)
-        low_level_features = self.deeplab.shortcut_conv(low_level_features)
+        low_level_features = self.deeplab.shortcut_conv(low_level_features_backbone)
         x_aspp = F.interpolate(x_aspp, size=(low_level_features.size(2), low_level_features.size(3)),
                                mode='bilinear', align_corners=True)
         cls_conv_before = self.deeplab.cat_conv(torch.cat((x_aspp, low_level_features), dim=1))
@@ -158,7 +159,7 @@ class DeepLabDANN(torch.nn.Module):
             domain_output_backbone = self.domain_classifier_backbone(reversed_features_backbone)
 
             # 应用梯度反转层到ASPP特征
-            reversed_features_aspp = GradientReversalLayer.apply(x_aspp, alpha)
+            reversed_features_aspp = GradientReversalLayer.apply(low_level_features_backbone, alpha)
             domain_output_aspp = self.domain_classifier_aspp(reversed_features_aspp)
 
             return x, domain_output_backbone, domain_output_aspp
@@ -374,7 +375,7 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
     for iteration, batch in enumerate(gen_val):
         if iteration >= epoch_step_val:
             break
-        imgs, pngs, labels = batch
+        imgs, pngs, labels,names = batch
         with torch.no_grad():
             if Cuda:
                 imgs = imgs.cuda()
@@ -983,9 +984,9 @@ if __name__ == "__main__":
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 1
+    Freeze_batch_size = 4
     UnFreeze_Epoch = 500  # 增加训练周期
-    Unfreeze_batch_size = 1
+    Unfreeze_batch_size = 4
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
@@ -1000,7 +1001,7 @@ if __name__ == "__main__":
     dice_loss = False
     focal_loss = False  # 启用focal_loss
     # cls_weights = np.ones([num_classes], np.float32)
-    # cls_weights = np.array([1, 2, 2], np.float32)
+    # cls_weights = np.array([1, 2, 2], npfloat32)
 
     num_workers = 4
 
