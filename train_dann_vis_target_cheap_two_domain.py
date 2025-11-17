@@ -29,6 +29,33 @@ import matplotlib.pyplot as plt
 import scipy.signal
 
 ration = 3
+TARGET_FILENAMES = {
+    "photo_20251115_114144_590864",
+    "photo_20251115_114150_354268",
+    "photo_20251115_114156_099701",
+    "photo_20251115_114204_099638",
+    "photo_20251115_114239_459843",
+    "photo_20251115_114251_430968",
+    "photo_20251115_114256_788783",
+    "photo_20251115_114301_648240",
+    "photo_20251115_114347_590810",
+    "photo_20251115_114354_885429",
+    "photo_20251115_114359_590002",
+    "photo_20251115_114406_052534",
+    "photo_20251115_114427_492863",
+    "photo_20251115_114432_303377",
+    "photo_20251115_114437_956730",
+    "photo_20251115_114442_520689",
+    "photo_20251115_114542_916763",
+    "photo_20251115_114546_998101",
+    "photo_20251115_114555_221134",
+    "photo_20251115_114559_430473",
+    "photo_20251115_114613_230848",
+    "photo_20251115_114617_990749",
+    "photo_20251115_114621_781525",
+    "photo_20251115_114625_684686",
+    "photo_20251115_114645_060958",
+}
 
 
 # 新增：梯度反转层（GRL）实现
@@ -208,12 +235,15 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
             target_iter = iter(gen_target)
             target_batch = next(target_iter)
 
-        # 处理源域数据
-        imgs_source, pngs_source, labels_source = source_batch
+        imgs_source, pngs_source, labels_source, names = source_batch
         domain_labels_source = torch.zeros(imgs_source.size(0), dtype=torch.long)  # 源域标签为0
-
+        # 通过文件名判断是否为混入的目标域样本
+        for i, file_name in enumerate(names):
+            base_filename = file_name
+            if base_filename in TARGET_FILENAMES:
+                domain_labels_source[i] = 1  # 混入的目标域样本设为1
         # 处理目标域数据
-        imgs_target, pngs_target, labels_target = target_batch
+        imgs_target, pngs_target, labels_target, names = target_batch
         domain_labels_target = torch.ones(imgs_target.size(0), dtype=torch.long)  # 目标域标签为1
 
         if Cuda:
@@ -825,7 +855,6 @@ class VisualizationTool:
             print(f"处理图像 {name} 时出错: {e}")
             return False, str(e)
 
-
     def visualize_results(self, model, lines, VOCdevkit_path, save_dir, num_visual=5, domain='source'):
         """
         顺序处理版本（备用，用于调试）
@@ -938,7 +967,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [640, 640]
+    input_shape = [320, 320]
 
     # ---------------------------------#
     #   DANN特定参数
@@ -946,20 +975,17 @@ if __name__ == "__main__":
     use_dann = True  # 是否使用DANN
     lambda_domain = 0.5  # 域对抗损失权重
 
-    # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
-    # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
-    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
-    # target_VOCdevkit_path = 'F:\BaiduNetdiskDownload\板栗\\archive\chestnut_improve'  # 目标域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'
+    target_VOCdevkit_path = 'H:\板栗\VOCdevkit'
 
     # ---------------------------------#
     #   训练参数
     # ---------------------------------#
     Init_Epoch = 0
     Freeze_Epoch = 50
-    Freeze_batch_size = 4
+    Freeze_batch_size = 1
     UnFreeze_Epoch = 500  # 增加训练周期
-    Unfreeze_batch_size = 4
+    Unfreeze_batch_size = 1
     Freeze_Train = False
     Init_lr = 5e-4
     Min_lr = Init_lr * 0.01
@@ -1123,11 +1149,11 @@ if __name__ == "__main__":
     # 计算类别权重（只使用源域数据）
     if local_rank == 0:
         print("\nCalculating class weights for source domain...")
-        source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
+        # source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
         #
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
+        cls_weights = [1, 1]
         #
         print("\nFinal Class Weights:")
         for c in range(num_classes):
@@ -1389,7 +1415,7 @@ if __name__ == "__main__":
                     target_train_lines,
                     target_VOCdevkit_path,
                     target_visual_dir,
-                    600,  # 每个epoch可视化30个训练样本
+                    100,  # 每个epoch可视化30个训练样本
                     domain='target'
                 )
 
