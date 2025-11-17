@@ -22,6 +22,33 @@ from utils.utils import (download_weights, seed_everything, show_config,
                          worker_init_fn)
 
 # 可视化目标域分割结果
+TARGET_FILENAMES = {
+    "photo_20251115_114144_590864",
+    "photo_20251115_114150_354268",
+    "photo_20251115_114156_099701",
+    "photo_20251115_114204_099638",
+    "photo_20251115_114239_459843",
+    "photo_20251115_114251_430968",
+    "photo_20251115_114256_788783",
+    "photo_20251115_114301_648240",
+    "photo_20251115_114347_590810",
+    "photo_20251115_114354_885429",
+    "photo_20251115_114359_590002",
+    "photo_20251115_114406_052534",
+    "photo_20251115_114427_492863",
+    "photo_20251115_114432_303377",
+    "photo_20251115_114437_956730",
+    "photo_20251115_114442_520689",
+    "photo_20251115_114542_916763",
+    "photo_20251115_114546_998101",
+    "photo_20251115_114555_221134",
+    "photo_20251115_114559_430473",
+    "photo_20251115_114613_230848",
+    "photo_20251115_114617_990749",
+    "photo_20251115_114621_781525",
+    "photo_20251115_114625_684686",
+    "photo_20251115_114645_060958",
+}
 
 # 设置matplotlib后端
 matplotlib.use('Agg')
@@ -30,6 +57,33 @@ import scipy.signal
 
 ration = 3
 
+TARGET_FILENAMES = {
+    "photo_20251115_114144_590864",
+    "photo_20251115_114150_354268",
+    "photo_20251115_114156_099701",
+    "photo_20251115_114204_099638",
+    "photo_20251115_114239_459843",
+    "photo_20251115_114251_430968",
+    "photo_20251115_114256_788783",
+    "photo_20251115_114301_648240",
+    "photo_20251115_114347_590810",
+    "photo_20251115_114354_885429",
+    "photo_20251115_114359_590002",
+    "photo_20251115_114406_052534",
+    "photo_20251115_114427_492863",
+    "photo_20251115_114432_303377",
+    "photo_20251115_114437_956730",
+    "photo_20251115_114442_520689",
+    "photo_20251115_114542_916763",
+    "photo_20251115_114546_998101",
+    "photo_20251115_114555_221134",
+    "photo_20251115_114559_430473",
+    "photo_20251115_114613_230848",
+    "photo_20251115_114617_990749",
+    "photo_20251115_114621_781525",
+    "photo_20251115_114625_684686",
+    "photo_20251115_114645_060958",
+}
 
 # 新增：梯度反转层（GRL）实现
 class GradientReversalLayer(torch.autograd.Function):
@@ -53,10 +107,7 @@ class DomainClassifier(torch.nn.Module):
         # 使用全局平均池化将特征图转换为特征向量
         self.global_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(input_channels, hidden_size),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Dropout(0.5),
-            torch.nn.Linear(hidden_size, num_domains),
+            torch.nn.Linear(input_channels, num_domains),
         )
 
         # 初始化权重
@@ -121,7 +172,7 @@ class DeepLabDANN(torch.nn.Module):
         # 如果是训练模式，计算域分类损失
         if mode == 'train':
             # 应用梯度反转层到ASPP特征
-            reversed_features = GradientReversalLayer.apply(x_aspp, alpha)
+            reversed_features = GradientReversalLayer.apply(x_backbone, alpha)
             # reversed_features = GradientReversalLayer.apply(cls_conv_before, alpha)
             domain_output = self.domain_classifier(reversed_features)
             return x, domain_output
@@ -195,11 +246,15 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
             target_batch = next(target_iter)
 
         # 处理源域数据
-        imgs_source, pngs_source, labels_source = source_batch
+        imgs_source, pngs_source, labels_source,names = source_batch
         domain_labels_source = torch.zeros(imgs_source.size(0), dtype=torch.long)  # 源域标签为0
-
+        # 通过文件名判断是否为混入的目标域样本
+        for i, file_name in enumerate(names):
+            base_filename = file_name
+            if base_filename in TARGET_FILENAMES:
+                domain_labels_source[i] = 1  # 混入的目标域样本设为1
         # 处理目标域数据
-        imgs_target, pngs_target, labels_target = target_batch
+        imgs_target, pngs_target, labels_target,names = target_batch
         domain_labels_target = torch.ones(imgs_target.size(0), dtype=torch.long)  # 目标域标签为1
 
         if Cuda:
@@ -313,7 +368,7 @@ def fit_one_epoch_dann(model_train, model, loss_history, eval_callback, optimize
     for iteration, batch in enumerate(gen_val):
         if iteration >= epoch_step_val:
             break
-        imgs, pngs, labels = batch
+        imgs, pngs, labels,names = batch
         with torch.no_grad():
             if Cuda:
                 imgs = imgs.cuda()
@@ -821,7 +876,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [640, 640]
+    input_shape = [320, 320]
 
     # ---------------------------------#
     #   DANN特定参数
@@ -829,11 +884,8 @@ if __name__ == "__main__":
     use_dann = True  # 是否使用DANN
     lambda_domain = 0.5  # 域对抗损失权重
 
-    # 数据集路径配置
-    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'  # 源域数据集路径
-    # source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\\1-2仁'  # 源域数据集路径
-    target_VOCdevkit_path = 'F:/BaiduNetdiskDownload/板栗/archive/chestnut_zonguldak'  # 目标域数据集路径
-    # target_VOCdevkit_path = 'F:\BaiduNetdiskDownload\板栗\\archive\chestnut_improve'  # 目标域数据集路径
+    source_VOCdevkit_path = 'F:\BaiduNetdiskDownload\VOCdevkit_1-2仁'
+    target_VOCdevkit_path = 'H:\板栗\VOCdevkit'
 
     # ---------------------------------#
     #   训练参数
@@ -851,7 +903,7 @@ if __name__ == "__main__":
     weight_decay = 1e-4
     lr_decay_type = 'cos'
     save_period = 1
-    save_dir = 'logs/cheaplab_dann_8_640_vistarget_600'
+    save_dir = 'logs'
     eval_flag = True
     eval_period = 10
     dice_loss = False
@@ -991,26 +1043,25 @@ if __name__ == "__main__":
     #   读取数据集对应的txt
     # ---------------------------#
     # 源域数据集
+    # 修复后（过滤空行）：
     with open(os.path.join(source_VOCdevkit_path, "VOC2007/ImageSets/Segmentation/train.txt"), "r") as f:
-        source_train_lines = f.readlines()
+        source_train_lines = [line.strip() for line in f.readlines() if line.strip()]  # 只保留非空行
     with open(os.path.join(source_VOCdevkit_path, "VOC2007/ImageSets/Segmentation/val.txt"), "r") as f:
-        source_val_lines = f.readlines()
+        source_val_lines = [line.strip() for line in f.readlines() if line.strip()]
 
-    # 目标域数据集
     with open(os.path.join(target_VOCdevkit_path, "VOC2007/ImageSets/Segmentation/train.txt"), "r") as f:
-        target_train_lines = f.readlines()
-
+        target_train_lines = [line.strip() for line in f.readlines() if line.strip()]
     num_train = len(source_train_lines)
     num_val = len(source_val_lines)
 
     # 计算类别权重（只使用源域数据）
     if local_rank == 0:
         print("\nCalculating class weights for source domain...")
-        source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
+        # source_class_ratios = calculate_class_weights(source_train_lines, source_VOCdevkit_path, num_classes)
         #
         # 使用源域的类别分布计算权重
         # 使用倒数方法计算权重
-        cls_weights = compute_class_weights(source_class_ratios, method='median_frequency')
+        cls_weights = [1,1]
         #
         print("\nFinal Class Weights:")
         for c in range(num_classes):
@@ -1272,7 +1323,7 @@ if __name__ == "__main__":
                     target_train_lines,
                     target_VOCdevkit_path,
                     target_visual_dir,
-                    600,  # 每个epoch可视化30个训练样本
+                    50,  # 每个epoch可视化30个训练样本
                     domain='target'
                 )
 

@@ -65,7 +65,7 @@ class DeeplabDataset(Dataset):
             # 目标域数据创建虚拟的seg_labels（全0）
             seg_labels = np.zeros((int(self.input_shape[0]), int(self.input_shape[1]), self.num_classes + 1))
 
-        return jpg, png, seg_labels
+        return jpg, png, seg_labels,name
 
     def rand(self, a=0, b=1):
         return np.random.rand() * (b - a) + a
@@ -178,11 +178,13 @@ def deeplab_dataset_collate(batch):
     images = []
     pngs = []
     seg_labels = []
-    for img, png, labels in batch:
+    names = []
+    for img, png, labels,name in batch:
         images.append(img)
         pngs.append(png)
         seg_labels.append(labels)
+        names.append(name)
     images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
     pngs = torch.from_numpy(np.array(pngs)).long()
     seg_labels = torch.from_numpy(np.array(seg_labels)).type(torch.FloatTensor)
-    return images, pngs, seg_labels
+    return images, pngs, seg_labels,names
