@@ -144,8 +144,9 @@ class DeepLabDANN(torch.nn.Module):
 
         # 域分类器 - 使用ASPP输出的通道数(256)，而不是backbone的输出通道数
         domain_input_channels = 128  # ASPP输出特征通道数固定为256
+        x_backbone_channels = 96  # ASPP输出特征通道数固定为256
 
-        self.domain_classifier = DomainClassifier(domain_input_channels)
+        self.domain_classifier = DomainClassifier(x_backbone_channels)
         self.lambda_domain = lambda_domain  # 域对抗损失权重
         self.alpha = 0  # GRL参数，将在训练中动态调整
 
@@ -876,7 +877,7 @@ if __name__ == "__main__":
     pretrained = False
     model_path = ""  # 完整的DeepLabV3+预训练模型
     downsample_factor = 16
-    input_shape = [320, 320]
+    input_shape = [640, 640]
 
     # ---------------------------------#
     #   DANN特定参数
