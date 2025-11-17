@@ -80,10 +80,7 @@ class DomainClassifier(torch.nn.Module):
         # 使用全局平均池化将特征图转换为特征向量
         self.global_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(input_channels, hidden_size),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Dropout(0.5),
-            torch.nn.Linear(hidden_size, num_domains),
+            torch.nn.Linear(input_channels, num_domains),
         )
 
         # 初始化权重
@@ -1003,7 +1000,7 @@ if __name__ == "__main__":
     # cls_weights = np.ones([num_classes], np.float32)
     # cls_weights = np.array([1, 2, 2], npfloat32)
 
-    num_workers = 4
+    num_workers = 2
 
     # 设置随机种子
     seed_everything(seed)
