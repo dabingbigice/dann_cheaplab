@@ -424,18 +424,18 @@ def visualize_result(orig_mask, closed_mask, ellipse, ellipse_adj, actual_area, 
 
 if __name__ == "__main__":
     # 使用示例：
-
+    # 摄像头 长99 宽73
     # 设置标定参数（根据实际情况调整）
     PX_AREA =  75.75 / 2048 / 1536  # 像素面积标定系数 (mm²/px)
     PX_LONG = np.sqrt(PX_AREA)  # 像素长度标定系数 (mm/px)
     H_THICKNESS = 5.0  # 板栗厚度 (mm)
 
     # 批量处理整个文件夹
-    input_folder = "output_masks"
+    input_folder = "test"
     all_results, features_data = batch_folder_predict(
         input_folder,
-        ".",
-        excel_output="板栗特征统计.xlsx",
+        ".test",
+        excel_output="test.xlsx",
         px_area=PX_AREA,
         px_long=PX_LONG,
         h=H_THICKNESS
